@@ -1,56 +1,75 @@
-const express = require('express');
-const bodyParser = require('body-parser');
-const app = express();
+const http = require('http');
+const url = require('url');
+const querystring = require('querystring');
 const PORT = 3000;
 
 // Dummy database
 let db = [];
 
-// Middleware
-app.use(bodyParser.json());
+// Create server
+const server = http.createServer((req, res) => {
+    const { method, url: reqUrl } = req;
+    const parsedUrl = url.parse(reqUrl, true);
 
-// Routes
-// GET all jokes
-app.get('/', (req, res) => {
-    res.json(db);
-});
+    // Parse query parameters
+    const { pathname, query } = parsedUrl;
 
-// POST a joke
-app.post('/', (req, res) => {
-    const { title, comedian, year } = req.body;
-    const id = db.length + 1; // Generate id
-    const joke = { id, title, comedian, year };
-    db.push(joke);
-    res.json(db);
-});
-
-// PATCH a joke
-app.patch('/joke/:id', (req, res) => {
-    const id = parseInt(req.params.id);
-    const { title, comedian, year } = req.body;
-
-    db = db.map(joke => {
-        if (joke.id === id) {
-            joke.title = title || joke.title;
-            joke.comedian = comedian || joke.comedian;
-            joke.year = year || joke.year;
+    // Parse POST data
+    let body = [];
+    req.on('data', chunk => {
+        body.push(chunk);
+    }).on('end', () => {
+        body = Buffer.concat(body).toString();
+        let postData = {};
+        if (body) {
+            postData = querystring.parse(body);
         }
-        return joke;
+
+        // Routes
+        if (method === 'GET' && pathname === '/') {
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify(db));
+        } else if (method === 'POST' && pathname === '/') {
+            const { title, comedian, year } = postData;
+            const id = db.length + 1;
+            const joke = { id, title, comedian, year };
+            db.push(joke);
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify(db));
+        } else if (method === 'PATCH' && pathname.startsWith('/joke/')) {
+            const id = parseInt(pathname.split('/')[2]);
+            const { title, comedian, year } = postData;
+            const index = db.findIndex(joke => joke.id === id);
+            if (index !== -1) {
+                db[index].title = title || db[index].title;
+                db[index].comedian = comedian || db[index].comedian;
+                db[index].year = year || db[index].year;
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify(db[index]));
+            } else {
+                res.writeHead(404, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: 'Joke not found' }));
+            }
+        } else if (method === 'DELETE' && pathname.startsWith('/joke/')) {
+            const id = parseInt(pathname.split('/')[2]);
+            const index = db.findIndex(joke => joke.id === id);
+            if (index !== -1) {
+                const deletedJoke = db.splice(index, 1);
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify(deletedJoke[0]));
+            } else {
+                res.writeHead(404, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: 'Joke not found' }));
+            }
+        } else {
+            res.writeHead(404, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Route not found' }));
+        }
     });
-
-    const updatedJoke = db.find(joke => joke.id === id);
-    res.json(updatedJoke);
 });
 
-// DELETE a joke
-app.delete('/joke/:id', (req, res) => {
-    const id = parseInt(req.params.id);
-    const deletedJoke = db.find(joke => joke.id === id);
-    db = db.filter(joke => joke.id !== id);
-    res.json(deletedJoke);
-});
-
-// Start the server using nodemon
-app.listen(PORT, () => {
+// Start server
+server.listen(PORT, () => {
     console.log(`Server is running on http://localhost:${PORT}`);
 });
+
